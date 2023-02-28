@@ -1,0 +1,8 @@
+[submodule "new/lib/forge-std"]
+	path = new/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+[submodule "lib/forge-std"]
+	branch = v1.4.0
+[submodule "lib/foundry-noir"]
+	path = lib/foundry-noir
+	url = https://github.com/cheethas/foundry-noir
