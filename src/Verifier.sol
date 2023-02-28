@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright 2020 Spilsbury Holdings Ltd
 
@@ -28,31 +27,24 @@ library TurboVerifier {
     using Transcript for Transcript.TranscriptData;
 
     /**
-        Calldata formatting:
-
-        0x00 - 0x04 : function signature
-        0x04 - 0x24 : proof_data pointer (location in calldata that contains the proof_data array)
-        0x44 - 0x64 : length of `proof_data` array
-        0x64 - ???? : array containing our zk proof data
-    **/
+     * Calldata formatting:
+     * 
+     *     0x00 - 0x04 : function signature
+     *     0x04 - 0x24 : proof_data pointer (location in calldata that contains the proof_data array)
+     *     0x44 - 0x64 : length of `proof_data` array
+     *     0x64 - ???? : array containing our zk proof data
+     *
+     */
     /**
      * @dev Verify a Plonk proof
      * @param - array of serialized proof data
      */
-    function verify(bytes calldata)
-        external
-        view
-        returns (bool result)
-    {
-
+    function verify(bytes calldata) external view returns (bool result) {
         Types.VerificationKey memory vk = get_verification_key();
         uint256 num_public_inputs = vk.num_inputs;
 
         // parse the input calldata and construct a Proof object
-        Types.Proof memory decoded_proof = deserialize_proof(
-            num_public_inputs,
-            vk
-        );
+        Types.Proof memory decoded_proof = deserialize_proof(num_public_inputs, vk);
 
         Transcript.TranscriptData memory transcript;
         transcript.generate_initial_challenge(vk.circuit_size, vk.num_inputs);
@@ -62,11 +54,7 @@ library TurboVerifier {
         transcript.generate_beta_gamma_challenges(challenges, vk.num_inputs);
         transcript.generate_alpha_challenge(challenges, decoded_proof.Z);
         transcript.generate_zeta_challenge(
-            challenges,
-            decoded_proof.T1,
-            decoded_proof.T2,
-            decoded_proof.T3,
-            decoded_proof.T4
+            challenges, decoded_proof.T1, decoded_proof.T2, decoded_proof.T3, decoded_proof.T4
         );
 
         /**
@@ -75,98 +63,71 @@ library TurboVerifier {
          * This is an efficiency improvement - it allows us to make use of the batch inversion Montgomery trick,
          * which allows all inversions to be replaced with one inversion operation, at the expense of a few
          * additional multiplications
-         **/
-        (uint256 r_0, uint256 L1) = evalaute_field_operations(
-            decoded_proof,
-            vk,
-            challenges
-        );
+         *
+         */
+        (uint256 r_0, uint256 L1) = evalaute_field_operations(decoded_proof, vk, challenges);
         decoded_proof.r_0 = r_0;
 
         // reconstruct the nu and u challenges
         // Need to change nu and u according to the simplified Plonk
         transcript.generate_nu_challenges(challenges, vk.num_inputs);
 
-        transcript.generate_separator_challenge(
-            challenges,
-            decoded_proof.PI_Z,
-            decoded_proof.PI_Z_OMEGA
-        );
+        transcript.generate_separator_challenge(challenges, decoded_proof.PI_Z, decoded_proof.PI_Z_OMEGA);
 
         //reset 'alpha base'
         challenges.alpha_base = challenges.alpha;
         // Computes step 9 -> [D]_1
-        Types.G1Point memory linearised_contribution = PolynomialEval
-            .compute_linearised_opening_terms(
-                challenges,
-                L1,
-                vk,
-                decoded_proof
-            );
+        Types.G1Point memory linearised_contribution =
+            PolynomialEval.compute_linearised_opening_terms(challenges, L1, vk, decoded_proof);
         // Computes step 10 -> [F]_1
-        Types.G1Point memory batch_opening_commitment = PolynomialEval
-            .compute_batch_opening_commitment(
-                challenges,
-                vk,
-                linearised_contribution,
-                decoded_proof
-            );
+        Types.G1Point memory batch_opening_commitment =
+            PolynomialEval.compute_batch_opening_commitment(challenges, vk, linearised_contribution, decoded_proof);
 
-        uint256 batch_evaluation_g1_scalar = PolynomialEval
-            .compute_batch_evaluation_scalar_multiplier(
-                decoded_proof,
-                challenges
-            );
+        uint256 batch_evaluation_g1_scalar =
+            PolynomialEval.compute_batch_evaluation_scalar_multiplier(decoded_proof, challenges);
 
-        result = perform_pairing(
-            batch_opening_commitment,
-            batch_evaluation_g1_scalar,
-            challenges,
-            decoded_proof,
-            vk
-        );
+        result = perform_pairing(batch_opening_commitment, batch_evaluation_g1_scalar, challenges, decoded_proof, vk);
         require(result, "Proof failed");
     }
 
-    
     function get_verification_key() internal pure returns (Types.VerificationKey memory) {
         Types.VerificationKey memory vk;
 
         assembly {
             mstore(add(vk, 0x00), 16) // vk.circuit_size
             mstore(add(vk, 0x20), 1) // vk.num_inputs
-            mstore(add(vk, 0x40),0x21082ca216cbbf4e1c6e4f4594dd508c996dfbe1174efb98b11509c6e306460b) // vk.work_root
-            mstore(add(vk, 0x60),0x2d5e098bb31e86271ccb415b196942d755b0a9c3f21dd9882fa3d63ab1000001) // vk.domain_inverse
-            mstore(add(vk, 0x80),0x02e40daf409556c02bfc85eb303402b774954d30aeb0337eb85a71e6373428de) // vk.work_root_inverse
-            mstore(mload(add(vk, 0xa0)), 0x0078134b2c1fcc0d04717529ecb3ddd24b384202347c2e68a54f16995421d9be)//vk.Q1
+            mstore(add(vk, 0x40), 0x21082ca216cbbf4e1c6e4f4594dd508c996dfbe1174efb98b11509c6e306460b) // vk.work_root
+            mstore(add(vk, 0x60), 0x2d5e098bb31e86271ccb415b196942d755b0a9c3f21dd9882fa3d63ab1000001) // vk.domain_inverse
+            mstore(add(vk, 0x80), 0x02e40daf409556c02bfc85eb303402b774954d30aeb0337eb85a71e6373428de) // vk.work_root_inverse
+            mstore(mload(add(vk, 0xa0)), 0x0078134b2c1fcc0d04717529ecb3ddd24b384202347c2e68a54f16995421d9be) //vk.Q1
             mstore(add(mload(add(vk, 0xa0)), 0x20), 0x2007c919d478f3da743e50ccc7a5e0588284035c5204d53468586c4990ef16ee)
-            mstore(mload(add(vk, 0xc0)), 0x217d6d4ff4a765326fa1ceb0bad64445bdb8b9c06379269b407d8f41049ce1d4)//vk.Q2
+            mstore(mload(add(vk, 0xc0)), 0x217d6d4ff4a765326fa1ceb0bad64445bdb8b9c06379269b407d8f41049ce1d4) //vk.Q2
             mstore(add(mload(add(vk, 0xc0)), 0x20), 0x2e2b0cb1e072d25e95e0bafd2ee947f80c4c6f958a0a36421d172206ea1770b2)
-            mstore(mload(add(vk, 0xe0)), 0x2618abe7e3877f7df354d615487020bdb2c548f9a0833f6fd2033d4344472358)//vk.Q3
+            mstore(mload(add(vk, 0xe0)), 0x2618abe7e3877f7df354d615487020bdb2c548f9a0833f6fd2033d4344472358) //vk.Q3
             mstore(add(mload(add(vk, 0xe0)), 0x20), 0x0e9ed39ef792eb3208c2cd4bfd73f00073e6a13979402fcc7629451392bf0c7c)
-            mstore(mload(add(vk, 0x100)), 0x2950076760523510abcfe90fa550b964e84b338f73af5222cdbbaefdacd4484e)//vk.Q4
+            mstore(mload(add(vk, 0x100)), 0x2950076760523510abcfe90fa550b964e84b338f73af5222cdbbaefdacd4484e) //vk.Q4
             mstore(add(mload(add(vk, 0x100)), 0x20), 0x2e4e3e272c7b78ad894559812d7766e05615a8f7050a43d7ed1367adf30a9319)
-            mstore(mload(add(vk, 0x120)), 0x2950076760523510abcfe90fa550b964e84b338f73af5222cdbbaefdacd4484e)//vk.Q5
+            mstore(mload(add(vk, 0x120)), 0x2950076760523510abcfe90fa550b964e84b338f73af5222cdbbaefdacd4484e) //vk.Q5
             mstore(add(mload(add(vk, 0x120)), 0x20), 0x2e4e3e272c7b78ad894559812d7766e05615a8f7050a43d7ed1367adf30a9319)
-            mstore(mload(add(vk, 0x140)), 0x0efe5ad29f99fce939416b6638dff26c845044cca9a2d9dbf94039a11d999aaa)//vk.QM
+            mstore(mload(add(vk, 0x140)), 0x0efe5ad29f99fce939416b6638dff26c845044cca9a2d9dbf94039a11d999aaa) //vk.QM
             mstore(add(mload(add(vk, 0x140)), 0x20), 0x0a44bf49517a4b66ae6b51eee6ac68587f768022c11ac8e37cd9dce243d01ef2)
-            mstore(mload(add(vk, 0x160)), 0x001cf4fbd27f1d93535c5fbcc892576c67c253ff0f01b07d154cad398584f8dc)//vk.QC
+            mstore(mload(add(vk, 0x160)), 0x001cf4fbd27f1d93535c5fbcc892576c67c253ff0f01b07d154cad398584f8dc) //vk.QC
             mstore(add(mload(add(vk, 0x160)), 0x20), 0x1442f3ed7beb24cd24138b14407237e675f4d9877ac8f42a2b30a96e04beedbf)
-            mstore(mload(add(vk, 0x180)), 0x2b1a3a73b9aed8610a3401992b1a06ef3f4a8d811006ec1b5d92c8048e601ed0)//vk.QARITH
+            mstore(mload(add(vk, 0x180)), 0x2b1a3a73b9aed8610a3401992b1a06ef3f4a8d811006ec1b5d92c8048e601ed0) //vk.QARITH
             mstore(add(mload(add(vk, 0x180)), 0x20), 0x0a71df8d5dab7da96f0362d55c0018f15a859bcb6314fdbc975f150a12d3a66c)
-            mstore(mload(add(vk, 0x1a0)), 0x2950076760523510abcfe90fa550b964e84b338f73af5222cdbbaefdacd4484e)//vk.QECC
+            mstore(mload(add(vk, 0x1a0)), 0x2950076760523510abcfe90fa550b964e84b338f73af5222cdbbaefdacd4484e) //vk.QECC
             mstore(add(mload(add(vk, 0x1a0)), 0x20), 0x2e4e3e272c7b78ad894559812d7766e05615a8f7050a43d7ed1367adf30a9319)
-            mstore(mload(add(vk, 0x1c0)), 0x2950076760523510abcfe90fa550b964e84b338f73af5222cdbbaefdacd4484e)//vk.QRANGE
+            mstore(mload(add(vk, 0x1c0)), 0x2950076760523510abcfe90fa550b964e84b338f73af5222cdbbaefdacd4484e) //vk.QRANGE
             mstore(add(mload(add(vk, 0x1c0)), 0x20), 0x2e4e3e272c7b78ad894559812d7766e05615a8f7050a43d7ed1367adf30a9319)
-            mstore(mload(add(vk, 0x1e0)), 0x2950076760523510abcfe90fa550b964e84b338f73af5222cdbbaefdacd4484e)//vk.QLOGIC
+            mstore(mload(add(vk, 0x1e0)), 0x2950076760523510abcfe90fa550b964e84b338f73af5222cdbbaefdacd4484e) //vk.QLOGIC
             mstore(add(mload(add(vk, 0x1e0)), 0x20), 0x2e4e3e272c7b78ad894559812d7766e05615a8f7050a43d7ed1367adf30a9319)
-            mstore(mload(add(vk, 0x200)), 0x161031d05f386fcd1402b74150c072eb1c7654d278499b8b0554dbb1fcbc3fdd)//vk.SIGMA1
+            mstore(mload(add(vk, 0x200)), 0x161031d05f386fcd1402b74150c072eb1c7654d278499b8b0554dbb1fcbc3fdd) //vk.SIGMA1
             mstore(add(mload(add(vk, 0x200)), 0x20), 0x084e2f9e234c806519ab19e5b6841b35c0f4fb82d82e38176356fa5b92dd85e8)
-            mstore(mload(add(vk, 0x220)), 0x06f0e066b03f3dd3852a38f7a5cc377f9d4f67d52a50dcfabb665542e98ed3a3)//vk.SIGMA2
+            mstore(mload(add(vk, 0x220)), 0x06f0e066b03f3dd3852a38f7a5cc377f9d4f67d52a50dcfabb665542e98ed3a3) //vk.SIGMA2
             mstore(add(mload(add(vk, 0x220)), 0x20), 0x1381459b75a6ce64256bbe708588fa314f3a10bfd3d1b1272309126f826ba3df)
-            mstore(mload(add(vk, 0x240)), 0x2313a194c0b55e41d2f3c3509e6e85bdba8433ca55e12e35230f067eda4e27ed)//vk.SIGMA3
+            mstore(mload(add(vk, 0x240)), 0x2313a194c0b55e41d2f3c3509e6e85bdba8433ca55e12e35230f067eda4e27ed) //vk.SIGMA3
             mstore(add(mload(add(vk, 0x240)), 0x20), 0x1e847839b8d6b4edfba261b89b0697b6bcbf6416c8410775496cb19ef050f195)
-            mstore(mload(add(vk, 0x260)), 0x18569b0d49bb1eed835a633a18565d72c2f943a81e880b598341eeb459fd7310)//vk.SIGMA4
+            mstore(mload(add(vk, 0x260)), 0x18569b0d49bb1eed835a633a18565d72c2f943a81e880b598341eeb459fd7310) //vk.SIGMA4
             mstore(add(mload(add(vk, 0x260)), 0x20), 0x19e0db9a254eb1fecddbd114723ef005d118083ce7d8f9ad3e2fbc6055f22e3e)
             mstore(add(vk, 0x280), 0x00) // vk.contains_recursive_proof
             mstore(add(vk, 0x2a0), 0) // vk.recursive_proof_public_input_indices
@@ -177,7 +138,6 @@ library TurboVerifier {
         }
         return vk;
     }
-
 
     /**
      * @dev Compute partial state of the verifier, specifically: public input delta evaluation, zero polynomial
@@ -209,10 +169,8 @@ library TurboVerifier {
         uint256 l_start;
         uint256 l_end;
         {
-            (
-                uint256 public_input_numerator,
-                uint256 public_input_denominator
-            ) = PolynomialEval.compute_public_input_delta(challenges, vk);
+            (uint256 public_input_numerator, uint256 public_input_denominator) =
+                PolynomialEval.compute_public_input_delta(challenges, vk);
 
             (
                 uint256 vanishing_numerator,
@@ -220,17 +178,9 @@ library TurboVerifier {
                 uint256 lagrange_numerator,
                 uint256 l_start_denominator,
                 uint256 l_end_denominator
-            ) = PolynomialEval.compute_lagrange_and_vanishing_fractions(
-                    vk,
-                    challenges.zeta
-                );
+            ) = PolynomialEval.compute_lagrange_and_vanishing_fractions(vk, challenges.zeta);
 
-            (
-                zero_polynomial_eval,
-                public_input_delta,
-                l_start,
-                l_end
-            ) = PolynomialEval.compute_batch_inversions(
+            (zero_polynomial_eval, public_input_delta, l_start, l_end) = PolynomialEval.compute_batch_inversions(
                 public_input_numerator,
                 public_input_denominator,
                 vanishing_numerator,
@@ -243,12 +193,7 @@ library TurboVerifier {
         }
 
         uint256 r_0 = PolynomialEval.compute_linear_polynomial_constant(
-            zero_polynomial_eval,
-            public_input_delta,
-            challenges,
-            l_start,
-            l_end,
-            decoded_proof
+            zero_polynomial_eval, public_input_delta, challenges, l_start, l_end, decoded_proof
         );
 
         return (r_0, l_start);
@@ -295,69 +240,30 @@ library TurboVerifier {
 
                 // set accumulator = batch_opening_commitment
                 mstore(mPtr, mload(batch_opening_commitment))
-                mstore(
-                    add(mPtr, 0x20),
-                    mload(add(batch_opening_commitment, 0x20))
-                )
+                mstore(add(mPtr, 0x20), mload(add(batch_opening_commitment, 0x20)))
 
                 // compute zeta.[PI_Z] and add into accumulator
                 mstore(add(mPtr, 0x40), mload(PI_Z))
                 mstore(add(mPtr, 0x60), mload(add(PI_Z, 0x20)))
                 mstore(add(mPtr, 0x80), zeta)
-                success := staticcall(
-                    gas(),
-                    7,
-                    add(mPtr, 0x40),
-                    0x60,
-                    add(mPtr, 0x40),
-                    0x40
-                )
-                success := and(
-                    success,
-                    staticcall(gas(), 6, mPtr, 0x80, mPtr, 0x40)
-                )
+                success := staticcall(gas(), 7, add(mPtr, 0x40), 0x60, add(mPtr, 0x40), 0x40)
+                success := and(success, staticcall(gas(), 6, mPtr, 0x80, mPtr, 0x40))
 
                 // compute u.zeta.omega.[PI_Z_OMEGA] and add into accumulator
                 mstore(add(mPtr, 0x40), mload(PI_Z_OMEGA))
                 mstore(add(mPtr, 0x60), mload(add(PI_Z_OMEGA, 0x20)))
                 mstore(add(mPtr, 0x80), pi_z_omega_scalar)
-                success := and(
-                    success,
-                    staticcall(
-                        gas(),
-                        7,
-                        add(mPtr, 0x40),
-                        0x60,
-                        add(mPtr, 0x40),
-                        0x40
-                    )
-                )
-                success := and(
-                    success,
-                    staticcall(gas(), 6, mPtr, 0x80, mPtr, 0x40)
-                )
+                success := and(success, staticcall(gas(), 7, add(mPtr, 0x40), 0x60, add(mPtr, 0x40), 0x40))
+                success := and(success, staticcall(gas(), 6, mPtr, 0x80, mPtr, 0x40))
 
                 // compute -batch_evaluation_g1_scalar.[1]
                 mstore(add(mPtr, 0x40), 0x01) // hardcoded generator point (1, 2)
                 mstore(add(mPtr, 0x60), 0x02)
                 mstore(add(mPtr, 0x80), batch_evaluation_g1_scalar)
-                success := and(
-                    success,
-                    staticcall(
-                        gas(),
-                        7,
-                        add(mPtr, 0x40),
-                        0x60,
-                        add(mPtr, 0x40),
-                        0x40
-                    )
-                )
+                success := and(success, staticcall(gas(), 7, add(mPtr, 0x40), 0x60, add(mPtr, 0x40), 0x40))
 
                 // add -batch_evaluation_g1_scalar.[1] and the accumulator point, write result into rhs
-                success := and(
-                    success,
-                    staticcall(gas(), 6, mPtr, 0x80, rhs, 0x40)
-                )
+                success := and(success, staticcall(gas(), 6, mPtr, 0x80, rhs, 0x40))
             }
         }
 
@@ -374,17 +280,7 @@ library TurboVerifier {
             mstore(add(mPtr, 0x40), mload(PI_Z_OMEGA))
             mstore(add(mPtr, 0x60), mload(add(PI_Z_OMEGA, 0x20)))
             mstore(add(mPtr, 0x80), u)
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    7,
-                    add(mPtr, 0x40),
-                    0x60,
-                    add(mPtr, 0x40),
-                    0x40
-                )
-            )
+            success := and(success, staticcall(gas(), 7, add(mPtr, 0x40), 0x60, add(mPtr, 0x40), 0x40))
 
             // add [PI_Z] + u.[PI_Z_OMEGA] and write result into lhs
             success := and(success, staticcall(gas(), 6, mPtr, 0x80, lhs, 0x40))
@@ -420,34 +316,22 @@ library TurboVerifier {
                 mstore(mPtr, mload(recursive_P1))
                 mstore(add(mPtr, 0x20), mload(add(recursive_P1, 0x20)))
                 mstore(add(mPtr, 0x40), mulmod(u, u, p)) // separator_challenge = u * u
-                success := and(
-                    success,
-                    staticcall(gas(), 7, mPtr, 0x60, add(mPtr, 0x60), 0x40)
-                )
+                success := and(success, staticcall(gas(), 7, mPtr, 0x60, add(mPtr, 0x60), 0x40))
 
                 // compute u.u.[recursive_P2] (u*u is still in memory at (mPtr + 0x40), no need to re-write it)
                 mstore(mPtr, mload(recursive_P2))
                 mstore(add(mPtr, 0x20), mload(add(recursive_P2, 0x20)))
-                success := and(
-                    success,
-                    staticcall(gas(), 7, mPtr, 0x60, mPtr, 0x40)
-                )
+                success := and(success, staticcall(gas(), 7, mPtr, 0x60, mPtr, 0x40))
 
                 // compute u.u.[recursiveP2] + rhs and write into rhs
                 mstore(add(mPtr, 0xa0), mload(rhs))
                 mstore(add(mPtr, 0xc0), mload(add(rhs, 0x20)))
-                success := and(
-                    success,
-                    staticcall(gas(), 6, add(mPtr, 0x60), 0x80, rhs, 0x40)
-                )
+                success := and(success, staticcall(gas(), 6, add(mPtr, 0x60), 0x80, rhs, 0x40))
 
                 // compute u.u.[recursiveP1] + lhs and write into lhs
                 mstore(add(mPtr, 0x40), mload(lhs))
                 mstore(add(mPtr, 0x60), mload(add(lhs, 0x20)))
-                success := and(
-                    success,
-                    staticcall(gas(), 6, mPtr, 0x80, lhs, 0x40)
-                )
+                success := and(success, staticcall(gas(), 6, mPtr, 0x80, lhs, 0x40))
             }
         }
 
@@ -461,10 +345,11 @@ library TurboVerifier {
      * @param num_public_inputs - number of public inputs in the proof. Taken from verification key
      * @return proof - proof deserialized into the proof struct
      */
-    function deserialize_proof(
-        uint256 num_public_inputs,
-        Types.VerificationKey memory vk
-    ) internal pure returns (Types.Proof memory proof) {
+    function deserialize_proof(uint256 num_public_inputs, Types.VerificationKey memory vk)
+        internal
+        pure
+        returns (Types.Proof memory proof)
+    {
         uint256 p = Bn254Crypto.r_mod;
         uint256 q = Bn254Crypto.p_mod;
         uint256 data_ptr;
@@ -514,191 +399,84 @@ library TurboVerifier {
             mstore(add(mload(proof_ptr), 0x20), mod(calldataload(data_ptr), q))
 
             // proof.W2
-            mstore(
-                mload(add(proof_ptr, 0x20)),
-                mod(calldataload(add(data_ptr, 0x60)), q)
-            )
-            mstore(
-                add(mload(add(proof_ptr, 0x20)), 0x20),
-                mod(calldataload(add(data_ptr, 0x40)), q)
-            )
+            mstore(mload(add(proof_ptr, 0x20)), mod(calldataload(add(data_ptr, 0x60)), q))
+            mstore(add(mload(add(proof_ptr, 0x20)), 0x20), mod(calldataload(add(data_ptr, 0x40)), q))
 
             // proof.W3
-            mstore(
-                mload(add(proof_ptr, 0x40)),
-                mod(calldataload(add(data_ptr, 0xa0)), q)
-            )
-            mstore(
-                add(mload(add(proof_ptr, 0x40)), 0x20),
-                mod(calldataload(add(data_ptr, 0x80)), q)
-            )
+            mstore(mload(add(proof_ptr, 0x40)), mod(calldataload(add(data_ptr, 0xa0)), q))
+            mstore(add(mload(add(proof_ptr, 0x40)), 0x20), mod(calldataload(add(data_ptr, 0x80)), q))
 
             // proof.W4
-            mstore(
-                mload(add(proof_ptr, 0x60)),
-                mod(calldataload(add(data_ptr, 0xe0)), q)
-            )
-            mstore(
-                add(mload(add(proof_ptr, 0x60)), 0x20),
-                mod(calldataload(add(data_ptr, 0xc0)), q)
-            )
+            mstore(mload(add(proof_ptr, 0x60)), mod(calldataload(add(data_ptr, 0xe0)), q))
+            mstore(add(mload(add(proof_ptr, 0x60)), 0x20), mod(calldataload(add(data_ptr, 0xc0)), q))
 
             // proof.Z
-            mstore(
-                mload(add(proof_ptr, 0x80)),
-                mod(calldataload(add(data_ptr, 0x120)), q)
-            )
-            mstore(
-                add(mload(add(proof_ptr, 0x80)), 0x20),
-                mod(calldataload(add(data_ptr, 0x100)), q)
-            )
+            mstore(mload(add(proof_ptr, 0x80)), mod(calldataload(add(data_ptr, 0x120)), q))
+            mstore(add(mload(add(proof_ptr, 0x80)), 0x20), mod(calldataload(add(data_ptr, 0x100)), q))
 
             // proof.T1
-            mstore(
-                mload(add(proof_ptr, 0xa0)),
-                mod(calldataload(add(data_ptr, 0x160)), q)
-            )
-            mstore(
-                add(mload(add(proof_ptr, 0xa0)), 0x20),
-                mod(calldataload(add(data_ptr, 0x140)), q)
-            )
+            mstore(mload(add(proof_ptr, 0xa0)), mod(calldataload(add(data_ptr, 0x160)), q))
+            mstore(add(mload(add(proof_ptr, 0xa0)), 0x20), mod(calldataload(add(data_ptr, 0x140)), q))
 
             // proof.T2
-            mstore(
-                mload(add(proof_ptr, 0xc0)),
-                mod(calldataload(add(data_ptr, 0x1a0)), q)
-            )
-            mstore(
-                add(mload(add(proof_ptr, 0xc0)), 0x20),
-                mod(calldataload(add(data_ptr, 0x180)), q)
-            )
+            mstore(mload(add(proof_ptr, 0xc0)), mod(calldataload(add(data_ptr, 0x1a0)), q))
+            mstore(add(mload(add(proof_ptr, 0xc0)), 0x20), mod(calldataload(add(data_ptr, 0x180)), q))
 
             // proof.T3
-            mstore(
-                mload(add(proof_ptr, 0xe0)),
-                mod(calldataload(add(data_ptr, 0x1e0)), q)
-            )
-            mstore(
-                add(mload(add(proof_ptr, 0xe0)), 0x20),
-                mod(calldataload(add(data_ptr, 0x1c0)), q)
-            )
+            mstore(mload(add(proof_ptr, 0xe0)), mod(calldataload(add(data_ptr, 0x1e0)), q))
+            mstore(add(mload(add(proof_ptr, 0xe0)), 0x20), mod(calldataload(add(data_ptr, 0x1c0)), q))
 
             // proof.T4
-            mstore(
-                mload(add(proof_ptr, 0x100)),
-                mod(calldataload(add(data_ptr, 0x220)), q)
-            )
-            mstore(
-                add(mload(add(proof_ptr, 0x100)), 0x20),
-                mod(calldataload(add(data_ptr, 0x200)), q)
-            )
+            mstore(mload(add(proof_ptr, 0x100)), mod(calldataload(add(data_ptr, 0x220)), q))
+            mstore(add(mload(add(proof_ptr, 0x100)), 0x20), mod(calldataload(add(data_ptr, 0x200)), q))
 
             // proof.w1 to proof.w4
-            mstore(
-                add(proof_ptr, 0x120),
-                mod(calldataload(add(data_ptr, 0x240)), p)
-            )
-            mstore(
-                add(proof_ptr, 0x140),
-                mod(calldataload(add(data_ptr, 0x260)), p)
-            )
-            mstore(
-                add(proof_ptr, 0x160),
-                mod(calldataload(add(data_ptr, 0x280)), p)
-            )
-            mstore(
-                add(proof_ptr, 0x180),
-                mod(calldataload(add(data_ptr, 0x2a0)), p)
-            )
+            mstore(add(proof_ptr, 0x120), mod(calldataload(add(data_ptr, 0x240)), p))
+            mstore(add(proof_ptr, 0x140), mod(calldataload(add(data_ptr, 0x260)), p))
+            mstore(add(proof_ptr, 0x160), mod(calldataload(add(data_ptr, 0x280)), p))
+            mstore(add(proof_ptr, 0x180), mod(calldataload(add(data_ptr, 0x2a0)), p))
 
             // proof.sigma1
-            mstore(
-                add(proof_ptr, 0x1a0),
-                mod(calldataload(add(data_ptr, 0x2c0)), p)
-            )
+            mstore(add(proof_ptr, 0x1a0), mod(calldataload(add(data_ptr, 0x2c0)), p))
 
             // proof.sigma2
-            mstore(
-                add(proof_ptr, 0x1c0),
-                mod(calldataload(add(data_ptr, 0x2e0)), p)
-            )
+            mstore(add(proof_ptr, 0x1c0), mod(calldataload(add(data_ptr, 0x2e0)), p))
 
             // proof.sigma3
-            mstore(
-                add(proof_ptr, 0x1e0),
-                mod(calldataload(add(data_ptr, 0x300)), p)
-            )
+            mstore(add(proof_ptr, 0x1e0), mod(calldataload(add(data_ptr, 0x300)), p))
 
             // proof.q_arith
-            mstore(
-                add(proof_ptr, 0x200),
-                mod(calldataload(add(data_ptr, 0x320)), p)
-            )
+            mstore(add(proof_ptr, 0x200), mod(calldataload(add(data_ptr, 0x320)), p))
 
             // proof.q_ecc
-            mstore(
-                add(proof_ptr, 0x220),
-                mod(calldataload(add(data_ptr, 0x340)), p)
-            )
+            mstore(add(proof_ptr, 0x220), mod(calldataload(add(data_ptr, 0x340)), p))
 
             // proof.q_c
-            mstore(
-                add(proof_ptr, 0x240),
-                mod(calldataload(add(data_ptr, 0x360)), p)
-            )
+            mstore(add(proof_ptr, 0x240), mod(calldataload(add(data_ptr, 0x360)), p))
 
             // proof.linearization_polynomial
             // mstore(add(proof_ptr, 0x260), mod(calldataload(add(data_ptr, 0x380)), p))
 
             // proof.grand_product_at_z_omega
-            mstore(
-                add(proof_ptr, 0x260),
-                mod(calldataload(add(data_ptr, 0x380)), p)
-            )
+            mstore(add(proof_ptr, 0x260), mod(calldataload(add(data_ptr, 0x380)), p))
 
             // proof.w1_omega to proof.w4_omega
-            mstore(
-                add(proof_ptr, 0x280),
-                mod(calldataload(add(data_ptr, 0x3a0)), p)
-            )
-            mstore(
-                add(proof_ptr, 0x2a0),
-                mod(calldataload(add(data_ptr, 0x3c0)), p)
-            )
-            mstore(
-                add(proof_ptr, 0x2c0),
-                mod(calldataload(add(data_ptr, 0x3e0)), p)
-            )
-            mstore(
-                add(proof_ptr, 0x2e0),
-                mod(calldataload(add(data_ptr, 0x400)), p)
-            )
+            mstore(add(proof_ptr, 0x280), mod(calldataload(add(data_ptr, 0x3a0)), p))
+            mstore(add(proof_ptr, 0x2a0), mod(calldataload(add(data_ptr, 0x3c0)), p))
+            mstore(add(proof_ptr, 0x2c0), mod(calldataload(add(data_ptr, 0x3e0)), p))
+            mstore(add(proof_ptr, 0x2e0), mod(calldataload(add(data_ptr, 0x400)), p))
 
             // proof.PI_Z
             //Order of x and y coordinate are reverse in case of serialization
-            mstore(
-                mload(add(proof_ptr, 0x300)),
-                mod(calldataload(add(data_ptr, 0x440)), q)
-            )
-            mstore(
-                add(mload(add(proof_ptr, 0x300)), 0x20),
-                mod(calldataload(add(data_ptr, 0x420)), q)
-            )
+            mstore(mload(add(proof_ptr, 0x300)), mod(calldataload(add(data_ptr, 0x440)), q))
+            mstore(add(mload(add(proof_ptr, 0x300)), 0x20), mod(calldataload(add(data_ptr, 0x420)), q))
 
             // proof.PI_Z_OMEGA
-            mstore(
-                mload(add(proof_ptr, 0x320)),
-                mod(calldataload(add(data_ptr, 0x480)), q)
-            )
-            mstore(
-                add(mload(add(proof_ptr, 0x320)), 0x20),
-                mod(calldataload(add(data_ptr, 0x460)), q)
-            )
+            mstore(mload(add(proof_ptr, 0x320)), mod(calldataload(add(data_ptr, 0x480)), q))
+            mstore(add(mload(add(proof_ptr, 0x320)), 0x20), mod(calldataload(add(data_ptr, 0x460)), q))
         }
     }
-}    
-
-
+}
 
 /**
  * @title Bn254Crypto library used for the fr, g1 and g2 point types
@@ -714,16 +492,12 @@ library Types {
     uint256 constant PROGRAM_WIDTH = 4;
     uint256 constant NUM_NU_CHALLENGES = 11;
 
-    uint256 constant coset_generator0 =
-        0x0000000000000000000000000000000000000000000000000000000000000005;
-    uint256 constant coset_generator1 =
-        0x0000000000000000000000000000000000000000000000000000000000000006;
-    uint256 constant coset_generator2 =
-        0x0000000000000000000000000000000000000000000000000000000000000007;
+    uint256 constant coset_generator0 = 0x0000000000000000000000000000000000000000000000000000000000000005;
+    uint256 constant coset_generator1 = 0x0000000000000000000000000000000000000000000000000000000000000006;
+    uint256 constant coset_generator2 = 0x0000000000000000000000000000000000000000000000000000000000000007;
 
     // TODO: add external_coset_generator() method to compute this
-    uint256 constant coset_generator7 =
-        0x000000000000000000000000000000000000000000000000000000000000000c;
+    uint256 constant coset_generator7 = 0x000000000000000000000000000000000000000000000000000000000000000c;
 
     struct G1Point {
         uint256 x;
@@ -825,41 +599,26 @@ library Types {
         uint256 zero_polynomial_eval;
     }
 }
-    
-    
-
 
 /**
  * @title Bn254 elliptic curve crypto
  * @dev Provides some basic methods to compute bilinear pairings, construct group elements and misc numerical methods
  */
 library Bn254Crypto {
-    uint256 constant p_mod =
-        21888242871839275222246405745257275088696311157297823662689037894645226208583;
-    uint256 constant r_mod =
-        21888242871839275222246405745257275088548364400416034343698204186575808495617;
+    uint256 constant p_mod = 21888242871839275222246405745257275088696311157297823662689037894645226208583;
+    uint256 constant r_mod = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
     // Perform a modular exponentiation. This method is ideal for small exponents (~64 bits or less), as
     // it is cheaper than using the pow precompile
-    function pow_small(
-        uint256 base,
-        uint256 exponent,
-        uint256 modulus
-    ) internal pure returns (uint256) {
+    function pow_small(uint256 base, uint256 exponent, uint256 modulus) internal pure returns (uint256) {
         uint256 result = 1;
         uint256 input = base;
         uint256 count = 1;
 
         assembly {
             let endpoint := add(exponent, 0x01)
-            for {
-
-            } lt(count, endpoint) {
-                count := add(count, count)
-            } {
-                if and(exponent, count) {
-                    result := mulmod(result, input, modulus)
-                }
+            for {} lt(count, endpoint) { count := add(count, count) } {
+                if and(exponent, count) { result := mulmod(result, input, modulus) }
                 input := mulmod(input, input, modulus)
             }
         }
@@ -886,11 +645,7 @@ library Bn254Crypto {
         return output;
     }
 
-    function new_g1(uint256 x, uint256 y)
-        internal
-        pure
-        returns (Types.G1Point memory)
-    {
+    function new_g1(uint256 x, uint256 y) internal pure returns (Types.G1Point memory) {
         uint256 xValue;
         uint256 yValue;
         assembly {
@@ -900,12 +655,7 @@ library Bn254Crypto {
         return Types.G1Point(xValue, yValue);
     }
 
-    function new_g2(
-        uint256 x0,
-        uint256 x1,
-        uint256 y0,
-        uint256 y1
-    ) internal pure returns (Types.G2Point memory) {
+    function new_g2(uint256 x0, uint256 x1, uint256 y0, uint256 y1) internal pure returns (Types.G2Point memory) {
         return Types.G2Point(x0, x1, y0, y1);
     }
 
@@ -914,13 +664,12 @@ library Bn254Crypto {
     }
 
     function P2() internal pure returns (Types.G2Point memory) {
-        return
-            Types.G2Point({
-                x0: 0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2,
-                x1: 0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed,
-                y0: 0x090689d0585ff075ec9e99ad690c3395bc4b313370b38ef355acdadcd122975b,
-                y1: 0x12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa
-            });
+        return Types.G2Point({
+            x0: 0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2,
+            x1: 0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed,
+            y0: 0x090689d0585ff075ec9e99ad690c3395bc4b313370b38ef355acdadcd122975b,
+            y1: 0x12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa
+        });
     }
 
     /// Evaluate the following pairing product:
@@ -972,20 +721,15 @@ library Bn254Crypto {
             let x := mload(point)
             let y := mload(add(point, 0x20))
 
-            is_well_formed := and(
-                and(and(lt(x, p), lt(y, p)), not(or(iszero(x), iszero(y)))),
-                eq(mulmod(y, y, p), addmod(mulmod(x, mulmod(x, x, p), p), 3, p))
-            )
+            is_well_formed :=
+                and(
+                    and(and(lt(x, p), lt(y, p)), not(or(iszero(x), iszero(y)))),
+                    eq(mulmod(y, y, p), addmod(mulmod(x, mulmod(x, x, p), p), 3, p))
+                )
         }
-        require(
-            is_well_formed,
-            "Bn254: G1 point not on curve, or is malformed"
-        );
+        require(is_well_formed, "Bn254: G1 point not on curve, or is malformed");
     }
 }
-
-    
-
 
 /**
  * @title Turbo Plonk polynomial evaluation
@@ -1027,12 +771,7 @@ library PolynomialEval {
     )
         internal
         view
-        returns (
-            uint256 zero_polynomial_eval,
-            uint256 public_input_delta,
-            uint256 l_start,
-            uint256 l_end
-        )
+        returns (uint256 zero_polynomial_eval, uint256 public_input_delta, uint256 l_start, uint256 l_end)
     {
         uint256 mPtr;
         uint256 p = Bn254Crypto.r_mod;
@@ -1078,17 +817,9 @@ library PolynomialEval {
             accumulator := mulmod(accumulator, mload(mPtr), p)
             mstore(mPtr, intermediate)
 
-            public_input_delta := mulmod(
-                public_input_delta_numerator,
-                mload(mPtr),
-                p
-            )
+            public_input_delta := mulmod(public_input_delta_numerator, mload(mPtr), p)
 
-            zero_polynomial_eval := mulmod(
-                vanishing_numerator,
-                mload(add(mPtr, 0x20)),
-                p
-            )
+            zero_polynomial_eval := mulmod(vanishing_numerator, mload(add(mPtr, 0x20)), p)
 
             l_start := mulmod(lagrange_numerator, mload(add(mPtr, 0x40)), p)
 
@@ -1096,10 +827,11 @@ library PolynomialEval {
         }
     }
 
-    function compute_public_input_delta(
-        Types.ChallengeTranscript memory challenges,
-        Types.VerificationKey memory vk
-    ) internal pure returns (uint256, uint256) {
+    function compute_public_input_delta(Types.ChallengeTranscript memory challenges, Types.VerificationKey memory vk)
+        internal
+        pure
+        returns (uint256, uint256)
+    {
         uint256 gamma = challenges.gamma;
         uint256 work_root = vk.work_root;
 
@@ -1125,11 +857,7 @@ library PolynomialEval {
             // get public inputs from calldata. N.B. If Contract ABI Changes this code will need to be updated!
             endpoint := add(endpoint, public_inputs)
             // Do some loop unrolling to reduce number of conditional jump operations
-            for {
-
-            } lt(public_inputs, endpoint) {
-
-            } {
+            for {} lt(public_inputs, endpoint) {} {
                 let input0 := calldataload(public_inputs)
                 let N0 := add(root_1, add(input0, gamma))
                 let D0 := add(root_2, N0) // 4x overloaded
@@ -1140,11 +868,7 @@ library PolynomialEval {
                 let input1 := calldataload(add(public_inputs, 0x20))
                 let N1 := add(root_1, add(input1, gamma))
 
-                denominator_value := mulmod(
-                    mulmod(D0, denominator_value, p),
-                    add(N1, root_2),
-                    p
-                )
+                denominator_value := mulmod(mulmod(D0, denominator_value, p), add(N1, root_2), p)
                 numerator_value := mulmod(mulmod(N1, N0, p), numerator_value, p)
 
                 root_1 := mulmod(root_1, work_root, p)
@@ -1155,24 +879,22 @@ library PolynomialEval {
             }
 
             endpoint := add(endpoint, 0x20)
-            for {
-
-            } lt(public_inputs, endpoint) {
-                public_inputs := add(public_inputs, 0x20)
-            } {
+            for {} lt(public_inputs, endpoint) { public_inputs := add(public_inputs, 0x20) } {
                 let input0 := calldataload(public_inputs)
                 valid := and(valid, lt(input0, p))
                 let T0 := addmod(input0, gamma, p)
-                numerator_value := mulmod(
-                    numerator_value,
-                    add(root_1, T0), // 0x05 = coset_generator0
-                    p
-                )
-                denominator_value := mulmod(
-                    denominator_value,
-                    add(add(root_1, root_2), T0), // 0x0c = coset_generator7
-                    p
-                )
+                numerator_value :=
+                    mulmod(
+                        numerator_value,
+                        add(root_1, T0), // 0x05 = coset_generator0
+                        p
+                    )
+                denominator_value :=
+                    mulmod(
+                        denominator_value,
+                        add(add(root_1, root_2), T0), // 0x0c = coset_generator7
+                        p
+                    )
                 root_1 := mulmod(root_1, work_root, p)
                 root_2 := mulmod(root_2, work_root, p)
             }
@@ -1185,26 +907,13 @@ library PolynomialEval {
      * @dev Computes the vanishing polynoimal and lagrange evaluations L1 and Ln.
      * @return Returns fractions as numerators and denominators. We combine with the public input fraction and compute inverses as a batch
      */
-    function compute_lagrange_and_vanishing_fractions(
-        Types.VerificationKey memory vk,
-        uint256 zeta
-    )
+    function compute_lagrange_and_vanishing_fractions(Types.VerificationKey memory vk, uint256 zeta)
         internal
         pure
-        returns (
-            uint256,
-            uint256,
-            uint256,
-            uint256,
-            uint256
-        )
+        returns (uint256, uint256, uint256, uint256, uint256)
     {
         uint256 p = Bn254Crypto.r_mod;
-        uint256 vanishing_numerator = Bn254Crypto.pow_small(
-            zeta,
-            vk.circuit_size,
-            p
-        );
+        uint256 vanishing_numerator = Bn254Crypto.pow_small(zeta, vk.circuit_size, p);
         vk.zeta_pow_n = vanishing_numerator;
         assembly {
             vanishing_numerator := addmod(vanishing_numerator, sub(p, 1), p)
@@ -1223,23 +932,11 @@ library PolynomialEval {
             // added to ensure the proving system is zero-knowledge
             vanishing_denominator := addmod(z, sub(p, work_root), p)
             work_root := mulmod(work_root, accumulating_root, p)
-            vanishing_denominator := mulmod(
-                vanishing_denominator,
-                addmod(z, sub(p, work_root), p),
-                p
-            )
+            vanishing_denominator := mulmod(vanishing_denominator, addmod(z, sub(p, work_root), p), p)
             work_root := mulmod(work_root, accumulating_root, p)
-            vanishing_denominator := mulmod(
-                vanishing_denominator,
-                addmod(z, sub(p, work_root), p),
-                p
-            )
+            vanishing_denominator := mulmod(vanishing_denominator, addmod(z, sub(p, work_root), p), p)
             work_root := mulmod(work_root, accumulating_root, p)
-            vanishing_denominator := mulmod(
-                vanishing_denominator,
-                addmod(z, sub(p, work_root), p),
-                p
-            )
+            vanishing_denominator := mulmod(vanishing_denominator, addmod(z, sub(p, work_root), p), p)
         }
 
         work_root = vk.work_root;
@@ -1254,20 +951,10 @@ library PolynomialEval {
             accumulating_root := mulmod(accumulating_root, accumulating_root, p)
             accumulating_root := mulmod(accumulating_root, work_root, p)
 
-            l_end_denominator := addmod(
-                mulmod(accumulating_root, z, p),
-                sub(p, 1),
-                p
-            )
+            l_end_denominator := addmod(mulmod(accumulating_root, z, p), sub(p, 1), p)
         }
 
-        return (
-            vanishing_numerator,
-            vanishing_denominator,
-            lagrange_numerator,
-            l_start_denominator,
-            l_end_denominator
-        );
+        return (vanishing_numerator, vanishing_denominator, lagrange_numerator, l_start_denominator, l_end_denominator);
     }
 
     function compute_arithmetic_gate_quotient_contribution(
@@ -1323,26 +1010,19 @@ library PolynomialEval {
                 let wire4_neg := sub(p, wire_t0)
                 delta := addmod(wire_t1, mulmod(wire4_neg, 0x04, p), p)
 
-                gate_id := mulmod(
+                gate_id :=
                     mulmod(
                         mulmod(
-                            mulmod(add(delta, 0x01), add(delta, 0x03), p),
-                            add(delta, sub(p, 0x01)),
+                            mulmod(mulmod(add(delta, 0x01), add(delta, 0x03), p), add(delta, sub(p, 0x01)), p),
+                            add(delta, sub(p, 0x03)),
                             p
                         ),
-                        add(delta, sub(p, 0x03)),
+                        alpha_base,
                         p
-                    ),
-                    alpha_base,
-                    p
-                )
+                    )
                 alpha_base := mulmod(alpha_base, alpha, p)
 
-                gate_id := addmod(
-                    gate_id,
-                    sub(p, mulmod(wire_t2, alpha_base, p)),
-                    p
-                )
+                gate_id := addmod(gate_id, sub(p, mulmod(wire_t2, alpha_base, p)), p)
 
                 alpha_base := mulmod(alpha_base, alpha, p)
             }
@@ -1385,25 +1065,13 @@ library PolynomialEval {
             wire_t3 = proof.w3_omega; // w3_omega
             uint256 wire_t4 = proof.w1_omega; // w1_omega
             assembly {
-                t0 := mulmod(
-                    addmod(wire_t1, wire_t2, p),
-                    addmod(wire_t3, sub(p, wire_t0), p),
-                    p
-                )
+                t0 := mulmod(addmod(wire_t1, wire_t2, p), addmod(wire_t3, sub(p, wire_t0), p), p)
 
                 t1 := addmod(wire_t0, sub(p, wire_t4), p)
 
-                t2 := addmod(
-                    sub(p, mulmod(selector_value, delta, p)),
-                    wire_t2,
-                    p
-                )
+                t2 := addmod(sub(p, mulmod(selector_value, delta, p)), wire_t2, p)
 
-                gate_id := addmod(
-                    gate_id,
-                    mulmod(add(t0, mulmod(t1, t2, p)), alpha_base, p),
-                    p
-                )
+                gate_id := addmod(gate_id, mulmod(add(t0, mulmod(t1, t2, p)), alpha_base, p), p)
 
                 alpha_base := mulmod(alpha_base, alpha, p)
             }
@@ -1426,14 +1094,7 @@ library PolynomialEval {
             }
 
             assembly {
-                let x_init_id := sub(
-                    p,
-                    mulmod(
-                        mulmod(wire_t0, selector_value, p),
-                        mulmod(wire_t2, alpha_base, p),
-                        p
-                    )
-                )
+                let x_init_id := sub(p, mulmod(mulmod(wire_t0, selector_value, p), mulmod(wire_t2, alpha_base, p), p))
 
                 gate_id := addmod(gate_id, x_init_id, p)
 
@@ -1444,19 +1105,11 @@ library PolynomialEval {
             wire_t1 = proof.w3; // w3
             wire_t2 = proof.w4; // w4
             assembly {
-                let y_init_id := mulmod(
-                    add(0x01, sub(p, wire_t2)),
-                    selector_value,
-                    p
-                )
+                let y_init_id := mulmod(add(0x01, sub(p, wire_t2)), selector_value, p)
 
                 t1 := sub(p, mulmod(wire_t0, wire_t1, p))
 
-                y_init_id := mulmod(
-                    add(y_init_id, t1),
-                    mulmod(alpha_base, selector_value, p),
-                    p
-                )
+                y_init_id := mulmod(add(y_init_id, t1), mulmod(alpha_base, selector_value, p), p)
 
                 gate_id := addmod(gate_id, y_init_id, p)
 
@@ -1525,11 +1178,7 @@ library PolynomialEval {
                 let t2 := addmod(grand_product, sub(p, public_delta), p)
                 t1 := mulmod(t1, t2, p)
 
-                numerator_collector := addmod(
-                    numerator_collector,
-                    sub(p, t0),
-                    p
-                )
+                numerator_collector := addmod(numerator_collector, sub(p, t0), p)
                 numerator_collector := addmod(numerator_collector, t1, p)
                 alpha_base := mulmod(alpha_base, alpha_cubed, p)
             }
@@ -1550,22 +1199,12 @@ library PolynomialEval {
         Types.Proof memory proof
     ) internal view returns (uint256) {
         uint256 t0 = compute_permutation_quotient_contribution(
-            public_input_delta,
-            challenges,
-            lagrange_start,
-            lagrange_end,
-            proof
+            public_input_delta, challenges, lagrange_start, lagrange_end, proof
         );
 
-        uint256 t1 = compute_arithmetic_gate_quotient_contribution(
-            challenges,
-            proof
-        );
+        uint256 t1 = compute_arithmetic_gate_quotient_contribution(challenges, proof);
 
-        uint256 t2 = compute_pedersen_gate_quotient_contribution(
-            challenges,
-            proof
-        );
+        uint256 t2 = compute_pedersen_gate_quotient_contribution(challenges, proof);
 
         uint256 r_0;
         uint256 p = Bn254Crypto.r_mod;
@@ -1582,27 +1221,10 @@ library PolynomialEval {
         Types.VerificationKey memory vk,
         Types.Proof memory proof
     ) internal view returns (Types.G1Point memory) {
-        Types.G1Point
-            memory accumulator = compute_grand_product_opening_group_element(
-                proof,
-                vk,
-                challenges,
-                L1_fr
-            );
-        Types.G1Point
-            memory arithmetic_term = compute_arithmetic_selector_opening_group_element(
-                proof,
-                vk,
-                challenges
-            );
-        uint256 range_multiplier = compute_range_gate_opening_scalar(
-            proof,
-            challenges
-        );
-        uint256 logic_multiplier = compute_logic_gate_opening_scalar(
-            proof,
-            challenges
-        );
+        Types.G1Point memory accumulator = compute_grand_product_opening_group_element(proof, vk, challenges, L1_fr);
+        Types.G1Point memory arithmetic_term = compute_arithmetic_selector_opening_group_element(proof, vk, challenges);
+        uint256 range_multiplier = compute_range_gate_opening_scalar(proof, challenges);
+        uint256 logic_multiplier = compute_logic_gate_opening_scalar(proof, challenges);
 
         Types.G1Point memory QRANGE = vk.QRANGE;
         Types.G1Point memory QLOGIC = vk.QLOGIC;
@@ -1624,45 +1246,23 @@ library PolynomialEval {
             // we use mPtr to store accumulated point
             mstore(add(mPtr, 0x40), mload(accumulator))
             mstore(add(mPtr, 0x60), mload(add(accumulator, 0x20)))
-            success := and(
-                success,
-                staticcall(gas(), 6, mPtr, 0x80, mPtr, 0x40)
-            )
+            success := and(success, staticcall(gas(), 6, mPtr, 0x80, mPtr, 0x40))
 
             // logic_multiplier.[QLOGIC]
             mstore(add(mPtr, 0x40), mload(QLOGIC))
             mstore(add(mPtr, 0x60), mload(add(QLOGIC, 0x20)))
             mstore(add(mPtr, 0x80), logic_multiplier)
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    7,
-                    add(mPtr, 0x40),
-                    0x60,
-                    add(mPtr, 0x40),
-                    0x40
-                )
-            )
+            success := and(success, staticcall(gas(), 7, add(mPtr, 0x40), 0x60, add(mPtr, 0x40), 0x40))
 
             // add scalar mul output into accumulator
-            success := and(
-                success,
-                staticcall(gas(), 6, mPtr, 0x80, mPtr, 0x40)
-            )
+            success := and(success, staticcall(gas(), 6, mPtr, 0x80, mPtr, 0x40))
 
             // add arithmetic into accumulator
             mstore(add(mPtr, 0x40), mload(arithmetic_term))
             mstore(add(mPtr, 0x60), mload(add(arithmetic_term, 0x20)))
-            success := and(
-                success,
-                staticcall(gas(), 6, mPtr, 0x80, accumulator, 0x40)
-            )
+            success := and(success, staticcall(gas(), 6, mPtr, 0x80, accumulator, 0x40))
         }
-        require(
-            success,
-            "compute_linearised_opening_terms group operations fail"
-        );
+        require(success, "compute_linearised_opening_terms group operations fail");
 
         return accumulator;
     }
@@ -1694,14 +1294,7 @@ library PolynomialEval {
             mstore(add(accumulator_ptr, 0x20), mload(add(work_point, 0x20)))
             mstore(add(accumulator_ptr, 0x40), zero_poly_eval_neg)
             // computing zero_poly_eval_neg * [T1]
-            success := staticcall(
-                gas(),
-                7,
-                accumulator_ptr,
-                0x60,
-                accumulator_ptr,
-                0x40
-            )
+            success := staticcall(gas(), 7, accumulator_ptr, 0x60, accumulator_ptr, 0x40)
         }
 
         // second term
@@ -1712,33 +1305,13 @@ library PolynomialEval {
         assembly {
             mstore(add(accumulator_ptr, 0x40), mload(work_point))
             mstore(add(accumulator_ptr, 0x60), mload(add(work_point, 0x20)))
-            mstore(
-                add(accumulator_ptr, 0x80),
-                mulmod(scalar_multiplier, zero_poly_eval_neg, p)
-            )
+            mstore(add(accumulator_ptr, 0x80), mulmod(scalar_multiplier, zero_poly_eval_neg, p))
 
             // compute zero_poly_eval_neg * zeta_n * [T2]
-            success := staticcall(
-                gas(),
-                7,
-                add(accumulator_ptr, 0x40),
-                0x60,
-                add(accumulator_ptr, 0x40),
-                0x40
-            )
+            success := staticcall(gas(), 7, add(accumulator_ptr, 0x40), 0x60, add(accumulator_ptr, 0x40), 0x40)
 
             // add scalar mul output into accumulator
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    6,
-                    accumulator_ptr,
-                    0x80,
-                    accumulator_ptr,
-                    0x40
-                )
-            )
+            success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
         }
 
         // third term
@@ -1749,36 +1322,14 @@ library PolynomialEval {
 
             mstore(add(accumulator_ptr, 0x40), mload(work_point))
             mstore(add(accumulator_ptr, 0x60), mload(add(work_point, 0x20)))
-            mstore(
-                add(accumulator_ptr, 0x80),
-                mulmod(scalar_multiplier, zero_poly_eval_neg, p)
-            )
+            mstore(add(accumulator_ptr, 0x80), mulmod(scalar_multiplier, zero_poly_eval_neg, p))
 
             // compute zero_poly_eval_neg * zeta_n^2 * [T3]
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    7,
-                    add(accumulator_ptr, 0x40),
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
-            )
+            success :=
+                and(success, staticcall(gas(), 7, add(accumulator_ptr, 0x40), 0x60, add(accumulator_ptr, 0x40), 0x40))
 
             // add scalar mul output into accumulator
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    6,
-                    accumulator_ptr,
-                    0x80,
-                    accumulator_ptr,
-                    0x40
-                )
-            )
+            success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
         }
 
         // fourth term
@@ -1789,36 +1340,14 @@ library PolynomialEval {
 
             mstore(add(accumulator_ptr, 0x40), mload(work_point))
             mstore(add(accumulator_ptr, 0x60), mload(add(work_point, 0x20)))
-            mstore(
-                add(accumulator_ptr, 0x80),
-                mulmod(scalar_multiplier, zero_poly_eval_neg, p)
-            )
+            mstore(add(accumulator_ptr, 0x80), mulmod(scalar_multiplier, zero_poly_eval_neg, p))
 
             // compute zero_poly_eval_neg * zeta_n^3 * [T4]
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    7,
-                    add(accumulator_ptr, 0x40),
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
-            )
+            success :=
+                and(success, staticcall(gas(), 7, add(accumulator_ptr, 0x40), 0x60, add(accumulator_ptr, 0x40), 0x40))
 
             // add scalar mul output into accumulator
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    6,
-                    accumulator_ptr,
-                    0x80,
-                    accumulator_ptr,
-                    0x40
-                )
-            )
+            success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
         }
 
         // fifth term
@@ -1826,25 +1355,9 @@ library PolynomialEval {
         work_point.validateG1Point();
         assembly {
             // add partial opening commitment into accumulator
-            mstore(
-                add(accumulator_ptr, 0x40),
-                mload(partial_opening_commitment)
-            )
-            mstore(
-                add(accumulator_ptr, 0x60),
-                mload(add(partial_opening_commitment, 0x20))
-            )
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    6,
-                    accumulator_ptr,
-                    0x80,
-                    accumulator_ptr,
-                    0x40
-                )
-            )
+            mstore(add(accumulator_ptr, 0x40), mload(partial_opening_commitment))
+            mstore(add(accumulator_ptr, 0x60), mload(add(partial_opening_commitment, 0x20)))
+            success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
         }
 
         uint256 u_plus_one = challenges.u;
@@ -1863,30 +1376,11 @@ library PolynomialEval {
             mstore(add(accumulator_ptr, 0x80), scalar_multiplier)
 
             // compute v0(u + 1).[W1]
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    7,
-                    add(accumulator_ptr, 0x40),
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
-            )
+            success :=
+                and(success, staticcall(gas(), 7, add(accumulator_ptr, 0x40), 0x60, add(accumulator_ptr, 0x40), 0x40))
 
             // add scalar mul output into accumulator
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    6,
-                    accumulator_ptr,
-                    0x80,
-                    accumulator_ptr,
-                    0x40
-                )
-            )
+            success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
         }
 
         // W2
@@ -1901,30 +1395,11 @@ library PolynomialEval {
             mstore(add(accumulator_ptr, 0x80), scalar_multiplier)
 
             // compute v1(u + 1).[W2]
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    7,
-                    add(accumulator_ptr, 0x40),
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
-            )
+            success :=
+                and(success, staticcall(gas(), 7, add(accumulator_ptr, 0x40), 0x60, add(accumulator_ptr, 0x40), 0x40))
 
             // add scalar mul output into accumulator
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    6,
-                    accumulator_ptr,
-                    0x80,
-                    accumulator_ptr,
-                    0x40
-                )
-            )
+            success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
         }
 
         // W3
@@ -1939,30 +1414,11 @@ library PolynomialEval {
             mstore(add(accumulator_ptr, 0x80), scalar_multiplier)
 
             // compute v2(u + 1).[W3]
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    7,
-                    add(accumulator_ptr, 0x40),
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
-            )
+            success :=
+                and(success, staticcall(gas(), 7, add(accumulator_ptr, 0x40), 0x60, add(accumulator_ptr, 0x40), 0x40))
 
             // add scalar mul output into accumulator
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    6,
-                    accumulator_ptr,
-                    0x80,
-                    accumulator_ptr,
-                    0x40
-                )
-            )
+            success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
         }
 
         // W4
@@ -1977,30 +1433,11 @@ library PolynomialEval {
             mstore(add(accumulator_ptr, 0x80), scalar_multiplier)
 
             // compute v3(u + 1).[W4]
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    7,
-                    add(accumulator_ptr, 0x40),
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
-            )
+            success :=
+                and(success, staticcall(gas(), 7, add(accumulator_ptr, 0x40), 0x60, add(accumulator_ptr, 0x40), 0x40))
 
             // add scalar mul output into accumulator
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    6,
-                    accumulator_ptr,
-                    0x80,
-                    accumulator_ptr,
-                    0x40
-                )
-            )
+            success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
         }
 
         // SIGMA1
@@ -2013,30 +1450,11 @@ library PolynomialEval {
             mstore(add(accumulator_ptr, 0x80), scalar_multiplier)
 
             // compute v4.[SIGMA1]
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    7,
-                    add(accumulator_ptr, 0x40),
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
-            )
+            success :=
+                and(success, staticcall(gas(), 7, add(accumulator_ptr, 0x40), 0x60, add(accumulator_ptr, 0x40), 0x40))
 
             // add scalar mul output into accumulator
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    6,
-                    accumulator_ptr,
-                    0x80,
-                    accumulator_ptr,
-                    0x40
-                )
-            )
+            success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
         }
 
         // SIGMA2
@@ -2049,30 +1467,11 @@ library PolynomialEval {
             mstore(add(accumulator_ptr, 0x80), scalar_multiplier)
 
             // compute v5.[SIGMA2]
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    7,
-                    add(accumulator_ptr, 0x40),
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
-            )
+            success :=
+                and(success, staticcall(gas(), 7, add(accumulator_ptr, 0x40), 0x60, add(accumulator_ptr, 0x40), 0x40))
 
             // add scalar mul output into accumulator
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    6,
-                    accumulator_ptr,
-                    0x80,
-                    accumulator_ptr,
-                    0x40
-                )
-            )
+            success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
         }
 
         // SIGMA3
@@ -2085,30 +1484,11 @@ library PolynomialEval {
             mstore(add(accumulator_ptr, 0x80), scalar_multiplier)
 
             // compute v6.[SIGMA3]
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    7,
-                    add(accumulator_ptr, 0x40),
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
-            )
+            success :=
+                and(success, staticcall(gas(), 7, add(accumulator_ptr, 0x40), 0x60, add(accumulator_ptr, 0x40), 0x40))
 
             // add scalar mul output into accumulator
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    6,
-                    accumulator_ptr,
-                    0x80,
-                    accumulator_ptr,
-                    0x40
-                )
-            )
+            success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
         }
 
         // QARITH
@@ -2121,30 +1501,11 @@ library PolynomialEval {
             mstore(add(accumulator_ptr, 0x80), scalar_multiplier)
 
             // compute v7.[QARITH]
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    7,
-                    add(accumulator_ptr, 0x40),
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
-            )
+            success :=
+                and(success, staticcall(gas(), 7, add(accumulator_ptr, 0x40), 0x60, add(accumulator_ptr, 0x40), 0x40))
 
             // add scalar mul output into accumulator
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    6,
-                    accumulator_ptr,
-                    0x80,
-                    accumulator_ptr,
-                    0x40
-                )
-            )
+            success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
         }
 
         Types.G1Point memory output;
@@ -2158,29 +1519,14 @@ library PolynomialEval {
             mstore(add(accumulator_ptr, 0x80), scalar_multiplier)
 
             // compute v8.[QECC]
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    7,
-                    add(accumulator_ptr, 0x40),
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
-            )
+            success :=
+                and(success, staticcall(gas(), 7, add(accumulator_ptr, 0x40), 0x60, add(accumulator_ptr, 0x40), 0x40))
 
             // add scalar mul output into output point
-            success := and(
-                success,
-                staticcall(gas(), 6, accumulator_ptr, 0x80, output, 0x40)
-            )
+            success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, output, 0x40))
         }
 
-        require(
-            success,
-            "compute_batch_opening_commitment group operations error"
-        );
+        require(success, "compute_batch_opening_commitment group operations error");
 
         return output;
     }
@@ -2275,31 +1621,19 @@ library PolynomialEval {
         lhs = challenges.v1;
         rhs = proof.w2_omega;
         assembly {
-            shifted_opening_scalar := addmod(
-                shifted_opening_scalar,
-                mulmod(lhs, rhs, p),
-                p
-            )
+            shifted_opening_scalar := addmod(shifted_opening_scalar, mulmod(lhs, rhs, p), p)
         }
 
         lhs = challenges.v2;
         rhs = proof.w3_omega;
         assembly {
-            shifted_opening_scalar := addmod(
-                shifted_opening_scalar,
-                mulmod(lhs, rhs, p),
-                p
-            )
+            shifted_opening_scalar := addmod(shifted_opening_scalar, mulmod(lhs, rhs, p), p)
         }
 
         lhs = challenges.v3;
         rhs = proof.w4_omega;
         assembly {
-            shifted_opening_scalar := addmod(
-                shifted_opening_scalar,
-                mulmod(lhs, rhs, p),
-                p
-            )
+            shifted_opening_scalar := addmod(shifted_opening_scalar, mulmod(lhs, rhs, p), p)
         }
 
         lhs = proof.grand_product_at_z_omega;
@@ -2344,22 +1678,14 @@ library PolynomialEval {
                     uint256 w4 = proof.w4;
                     uint256 w4_omega = proof.w4_omega;
                     assembly {
-                        delta := addmod(
-                            w4_omega,
-                            sub(p, mulmod(w4, 0x04, p)),
-                            p
-                        )
+                        delta := addmod(w4_omega, sub(p, mulmod(w4, 0x04, p)), p)
                     }
                 }
                 uint256 w1 = proof.w1;
 
                 assembly {
                     scalar_multiplier := w1
-                    scalar_multiplier := mulmod(
-                        scalar_multiplier,
-                        alpha_base,
-                        p
-                    )
+                    scalar_multiplier := mulmod(scalar_multiplier, alpha_base, p)
                     scalar_multiplier := mulmod(scalar_multiplier, q_arith, p)
 
                     scaling_alpha := mulmod(scaling_alpha, alpha, p)
@@ -2379,14 +1705,7 @@ library PolynomialEval {
                     mstore(mPtr, mload(Q1))
                     mstore(add(mPtr, 0x20), mload(add(Q1, 0x20)))
                     mstore(add(mPtr, 0x40), scalar_multiplier)
-                    success := staticcall(
-                        gas(),
-                        7,
-                        mPtr,
-                        0x60,
-                        accumulator_ptr,
-                        0x40
-                    )
+                    success := staticcall(gas(), 7, mPtr, 0x60, accumulator_ptr, 0x40)
                 }
                 require(success, "G1 point multiplication failed!");
             }
@@ -2396,11 +1715,7 @@ library PolynomialEval {
                 uint256 w2 = proof.w2;
                 assembly {
                     scalar_multiplier := w2
-                    scalar_multiplier := mulmod(
-                        scalar_multiplier,
-                        alpha_base,
-                        p
-                    )
+                    scalar_multiplier := mulmod(scalar_multiplier, alpha_base, p)
                     scalar_multiplier := mulmod(scalar_multiplier, q_arith, p)
 
                     let t0 := mulmod(scaling_alpha, q_ecc, p)
@@ -2417,27 +1732,10 @@ library PolynomialEval {
                     mstore(add(mPtr, 0x40), scalar_multiplier)
 
                     // write scalar mul output 0x40 bytes ahead of accumulator
-                    success := staticcall(
-                        gas(),
-                        7,
-                        mPtr,
-                        0x60,
-                        add(accumulator_ptr, 0x40),
-                        0x40
-                    )
+                    success := staticcall(gas(), 7, mPtr, 0x60, add(accumulator_ptr, 0x40), 0x40)
 
                     // add scalar mul output into accumulator
-                    success := and(
-                        success,
-                        staticcall(
-                            gas(),
-                            6,
-                            accumulator_ptr,
-                            0x80,
-                            accumulator_ptr,
-                            0x40
-                        )
-                    )
+                    success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
                 }
                 require(success, "G1 point multiplication failed!");
             }
@@ -2448,16 +1746,8 @@ library PolynomialEval {
                     uint256 w3 = proof.w3;
                     assembly {
                         scalar_multiplier := w3
-                        scalar_multiplier := mulmod(
-                            scalar_multiplier,
-                            alpha_base,
-                            p
-                        )
-                        scalar_multiplier := mulmod(
-                            scalar_multiplier,
-                            q_arith,
-                            p
-                        )
+                        scalar_multiplier := mulmod(scalar_multiplier, alpha_base, p)
+                        scalar_multiplier := mulmod(scalar_multiplier, q_arith, p)
                     }
                 }
                 {
@@ -2478,11 +1768,7 @@ library PolynomialEval {
                             t1 := addmod(t1, t1, p)
                             t1 := mulmod(t1, q_ecc, p)
 
-                            scalar_multiplier := addmod(
-                                scalar_multiplier,
-                                t1,
-                                p
-                            )
+                            scalar_multiplier := addmod(scalar_multiplier, t1, p)
                         }
                     }
                 }
@@ -2516,27 +1802,10 @@ library PolynomialEval {
                 mstore(add(mPtr, 0x40), scalar_multiplier)
 
                 // write scalar mul output 0x40 bytes ahead of accumulator
-                success := staticcall(
-                    gas(),
-                    7,
-                    mPtr,
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
+                success := staticcall(gas(), 7, mPtr, 0x60, add(accumulator_ptr, 0x40), 0x40)
 
                 // add scalar mul output into accumulator
-                success := and(
-                    success,
-                    staticcall(
-                        gas(),
-                        6,
-                        accumulator_ptr,
-                        0x80,
-                        accumulator_ptr,
-                        0x40
-                    )
-                )
+                success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
             }
             require(success, "G1 point multiplication failed!");
         }
@@ -2551,11 +1820,7 @@ library PolynomialEval {
                 scalar_multiplier := mulmod(scalar_multiplier, alpha_base, p)
                 scalar_multiplier := mulmod(scalar_multiplier, q_arith, p)
 
-                scaling_alpha := mulmod(
-                    scaling_alpha,
-                    mulmod(alpha, alpha, p),
-                    p
-                )
+                scaling_alpha := mulmod(scaling_alpha, mulmod(alpha, alpha, p), p)
                 let t0 := mulmod(w3, q_ecc, p)
                 t0 := mulmod(t0, q_c, p)
                 t0 := mulmod(t0, scaling_alpha, p)
@@ -2573,27 +1838,10 @@ library PolynomialEval {
                 mstore(add(mPtr, 0x40), scalar_multiplier)
 
                 // write scalar mul output 0x40 bytes ahead of accumulator
-                success := staticcall(
-                    gas(),
-                    7,
-                    mPtr,
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
+                success := staticcall(gas(), 7, mPtr, 0x60, add(accumulator_ptr, 0x40), 0x40)
 
                 // add scalar mul output into accumulator
-                success := and(
-                    success,
-                    staticcall(
-                        gas(),
-                        6,
-                        accumulator_ptr,
-                        0x80,
-                        accumulator_ptr,
-                        0x40
-                    )
-                )
+                success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
             }
             require(success, "G1 point multiplication failed!");
         }
@@ -2606,11 +1854,7 @@ library PolynomialEval {
                 let neg_w4 := sub(p, w4)
                 scalar_multiplier := mulmod(w4, w4, p)
                 scalar_multiplier := addmod(scalar_multiplier, neg_w4, p)
-                scalar_multiplier := mulmod(
-                    scalar_multiplier,
-                    addmod(w4, sub(p, 2), p),
-                    p
-                )
+                scalar_multiplier := mulmod(scalar_multiplier, addmod(w4, sub(p, 2), p), p)
                 scalar_multiplier := mulmod(scalar_multiplier, alpha_base, p)
                 scalar_multiplier := mulmod(scalar_multiplier, alpha, p)
                 scalar_multiplier := mulmod(scalar_multiplier, q_arith, p)
@@ -2633,27 +1877,10 @@ library PolynomialEval {
                 mstore(add(mPtr, 0x40), scalar_multiplier)
 
                 // write scalar mul output 0x40 bytes ahead of accumulator
-                success := staticcall(
-                    gas(),
-                    7,
-                    mPtr,
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
+                success := staticcall(gas(), 7, mPtr, 0x60, add(accumulator_ptr, 0x40), 0x40)
 
                 // add scalar mul output into accumulator
-                success := and(
-                    success,
-                    staticcall(
-                        gas(),
-                        6,
-                        accumulator_ptr,
-                        0x80,
-                        accumulator_ptr,
-                        0x40
-                    )
-                )
+                success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
             }
             require(success, "G1 point multiplication failed!");
         }
@@ -2666,11 +1893,7 @@ library PolynomialEval {
 
                 assembly {
                     scalar_multiplier := mulmod(w1, w2, p)
-                    scalar_multiplier := mulmod(
-                        scalar_multiplier,
-                        alpha_base,
-                        p
-                    )
+                    scalar_multiplier := mulmod(scalar_multiplier, alpha_base, p)
                     scalar_multiplier := mulmod(scalar_multiplier, q_arith, p)
                 }
             }
@@ -2695,27 +1918,10 @@ library PolynomialEval {
                 mstore(add(mPtr, 0x40), scalar_multiplier)
 
                 // write scalar mul output 0x40 bytes ahead of accumulator
-                success := staticcall(
-                    gas(),
-                    7,
-                    mPtr,
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
+                success := staticcall(gas(), 7, mPtr, 0x60, add(accumulator_ptr, 0x40), 0x40)
 
                 // add scalar mul output into accumulator
-                success := and(
-                    success,
-                    staticcall(
-                        gas(),
-                        6,
-                        accumulator_ptr,
-                        0x80,
-                        accumulator_ptr,
-                        0x40
-                    )
-                )
+                success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, accumulator_ptr, 0x40))
             }
             require(success, "G1 point multiplication failed!");
         }
@@ -2744,20 +1950,10 @@ library PolynomialEval {
                 mstore(add(mPtr, 0x40), scalar_multiplier)
 
                 // write scalar mul output 0x40 bytes ahead of accumulator
-                success := staticcall(
-                    gas(),
-                    7,
-                    mPtr,
-                    0x60,
-                    add(accumulator_ptr, 0x40),
-                    0x40
-                )
+                success := staticcall(gas(), 7, mPtr, 0x60, add(accumulator_ptr, 0x40), 0x40)
 
                 // add scalar mul output into output point
-                success := and(
-                    success,
-                    staticcall(gas(), 6, accumulator_ptr, 0x80, output, 0x40)
-                )
+                success := and(success, staticcall(gas(), 6, accumulator_ptr, 0x80, output, 0x40))
             }
             require(success, "G1 point multiplication failed!");
         }
@@ -2769,10 +1965,11 @@ library PolynomialEval {
     // Compute kate opening scalar for logic gate opening scalars
     // This method evalautes the polynomial identity used to evaluate either
     // a 2-bit AND or XOR operation in a single constraint
-    function compute_logic_gate_opening_scalar(
-        Types.Proof memory proof,
-        Types.ChallengeTranscript memory challenges
-    ) internal pure returns (uint256) {
+    function compute_logic_gate_opening_scalar(Types.Proof memory proof, Types.ChallengeTranscript memory challenges)
+        internal
+        pure
+        returns (uint256)
+    {
         uint256 identity = 0;
         uint256 p = Bn254Crypto.r_mod;
         {
@@ -2919,10 +2116,11 @@ library PolynomialEval {
     }
 
     // Compute kate opening scalar for arithmetic gate selectors
-    function compute_range_gate_opening_scalar(
-        Types.Proof memory proof,
-        Types.ChallengeTranscript memory challenges
-    ) internal pure returns (uint256) {
+    function compute_range_gate_opening_scalar(Types.Proof memory proof, Types.ChallengeTranscript memory challenges)
+        internal
+        pure
+        returns (uint256)
+    {
         uint256 wire1 = proof.w1;
         uint256 wire2 = proof.w2;
         uint256 wire3 = proof.w3;
@@ -2936,11 +2134,7 @@ library PolynomialEval {
             let delta_1 := addmod(wire3, sub(p, mulmod(wire4, 0x04, p)), p)
             let delta_2 := addmod(wire2, sub(p, mulmod(wire3, 0x04, p)), p)
             let delta_3 := addmod(wire1, sub(p, mulmod(wire2, 0x04, p)), p)
-            let delta_4 := addmod(
-                wire4_omega,
-                sub(p, mulmod(wire1, 0x04, p)),
-                p
-            )
+            let delta_4 := addmod(wire4_omega, sub(p, mulmod(wire1, 0x04, p)), p)
 
             let t0 := mulmod(delta_1, delta_1, p)
             t0 := addmod(t0, sub(p, delta_1), p)
@@ -3008,16 +2202,8 @@ library PolynomialEval {
             uint256 sigma1 = proof.sigma1;
             assembly {
                 let witness_term := addmod(w1, gamma, p)
-                partial_grand_product := addmod(
-                    mulmod(beta, zeta, p),
-                    witness_term,
-                    p
-                )
-                sigma_multiplier := addmod(
-                    mulmod(sigma1, beta, p),
-                    witness_term,
-                    p
-                )
+                partial_grand_product := addmod(mulmod(beta, zeta, p), witness_term, p)
+                sigma_multiplier := addmod(mulmod(sigma1, beta, p), witness_term, p)
             }
         }
         {
@@ -3025,20 +2211,9 @@ library PolynomialEval {
             uint256 sigma2 = proof.sigma2;
             assembly {
                 let witness_term := addmod(w2, gamma, p)
-                partial_grand_product := mulmod(
-                    partial_grand_product,
-                    addmod(
-                        mulmod(mulmod(zeta, 0x05, p), beta, p),
-                        witness_term,
-                        p
-                    ),
-                    p
-                )
-                sigma_multiplier := mulmod(
-                    sigma_multiplier,
-                    addmod(mulmod(sigma2, beta, p), witness_term, p),
-                    p
-                )
+                partial_grand_product :=
+                    mulmod(partial_grand_product, addmod(mulmod(mulmod(zeta, 0x05, p), beta, p), witness_term, p), p)
+                sigma_multiplier := mulmod(sigma_multiplier, addmod(mulmod(sigma2, beta, p), witness_term, p), p)
             }
         }
         {
@@ -3046,39 +2221,19 @@ library PolynomialEval {
             uint256 sigma3 = proof.sigma3;
             assembly {
                 let witness_term := addmod(w3, gamma, p)
-                partial_grand_product := mulmod(
-                    partial_grand_product,
-                    addmod(
-                        mulmod(mulmod(zeta, 0x06, p), beta, p),
-                        witness_term,
-                        p
-                    ),
-                    p
-                )
+                partial_grand_product :=
+                    mulmod(partial_grand_product, addmod(mulmod(mulmod(zeta, 0x06, p), beta, p), witness_term, p), p)
 
-                sigma_multiplier := mulmod(
-                    sigma_multiplier,
-                    addmod(mulmod(sigma3, beta, p), witness_term, p),
-                    p
-                )
+                sigma_multiplier := mulmod(sigma_multiplier, addmod(mulmod(sigma3, beta, p), witness_term, p), p)
             }
         }
         {
             uint256 w4 = proof.w4;
             assembly {
-                partial_grand_product := mulmod(
-                    partial_grand_product,
-                    addmod(
-                        addmod(
-                            mulmod(mulmod(zeta, 0x07, p), beta, p),
-                            gamma,
-                            p
-                        ),
-                        w4,
-                        p
-                    ),
-                    p
-                )
+                partial_grand_product :=
+                    mulmod(
+                        partial_grand_product, addmod(addmod(mulmod(mulmod(zeta, 0x07, p), beta, p), gamma, p), w4, p), p
+                    )
             }
         }
         {
@@ -3088,40 +2243,15 @@ library PolynomialEval {
             uint256 grand_product_at_z_omega = proof.grand_product_at_z_omega;
             uint256 l_start = L1_fr;
             assembly {
-                partial_grand_product := mulmod(
-                    partial_grand_product,
-                    alpha_base,
-                    p
-                )
+                partial_grand_product := mulmod(partial_grand_product, alpha_base, p)
 
-                sigma_multiplier := mulmod(
-                    sub(
-                        p,
-                        mulmod(
-                            mulmod(
-                                sigma_multiplier,
-                                grand_product_at_z_omega,
-                                p
-                            ),
-                            alpha_base,
-                            p
-                        )
-                    ),
-                    beta,
-                    p
-                )
+                sigma_multiplier :=
+                    mulmod(sub(p, mulmod(mulmod(sigma_multiplier, grand_product_at_z_omega, p), alpha_base, p)), beta, p)
 
                 alpha_base := mulmod(mulmod(alpha_base, alpha, p), alpha, p)
 
-                partial_grand_product := addmod(
-                    addmod(
-                        partial_grand_product,
-                        mulmod(l_start, alpha_base, p),
-                        p
-                    ),
-                    separator_challenge,
-                    p
-                )
+                partial_grand_product :=
+                    addmod(addmod(partial_grand_product, mulmod(l_start, alpha_base, p), p), separator_challenge, p)
 
                 alpha_base := mulmod(alpha_base, alpha, p)
             }
@@ -3144,38 +2274,20 @@ library PolynomialEval {
             mstore(add(mPtr, 0x40), mload(SIGMA4))
             mstore(add(mPtr, 0x60), mload(add(SIGMA4, 0x20)))
             mstore(add(mPtr, 0x80), sigma_multiplier)
-            success := and(
-                success,
-                staticcall(
-                    gas(),
-                    7,
-                    add(mPtr, 0x40),
-                    0x60,
-                    add(mPtr, 0x40),
-                    0x40
-                )
-            )
+            success := and(success, staticcall(gas(), 7, add(mPtr, 0x40), 0x60, add(mPtr, 0x40), 0x40))
 
             // mload(mPtr) : (partial_grand_product * [Z]).x
             // mload(mPtr + 32) : (partial_grand_product * [Z]).y
             // mload(mPtr + 64) : (sigma_multiplier * [SIGMA_4]).x
             // mload(mPtr + 96) : (sigma_multiplier * [SIGMA_4]).y
 
-            success := and(
-                success,
-                staticcall(gas(), 6, mPtr, 0x80, accumulator, 0x40)
-            )
+            success := and(success, staticcall(gas(), 6, mPtr, 0x80, accumulator, 0x40))
         }
 
-        require(
-            success,
-            "compute_grand_product_opening_scalar group operations failure"
-        );
+        require(success, "compute_grand_product_opening_scalar group operations failure");
         return accumulator;
     }
 }
-
-    
 
 /**
  * @title Transcript library
@@ -3189,11 +2301,10 @@ library Transcript {
     /**
      * Compute keccak256 hash of 2 4-byte variables (circuit_size, num_public_inputs)
      */
-    function generate_initial_challenge(
-        TranscriptData memory self,
-        uint256 circuit_size,
-        uint256 num_public_inputs
-    ) internal pure {
+    function generate_initial_challenge(TranscriptData memory self, uint256 circuit_size, uint256 num_public_inputs)
+        internal
+        pure
+    {
         bytes32 challenge;
         assembly {
             let mPtr := mload(0x40)
@@ -3433,5 +2544,3 @@ library Transcript {
         self.current_challenge = challenge;
     }
 }
- 
-    

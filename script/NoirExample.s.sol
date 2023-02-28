@@ -5,7 +5,7 @@ import "forge-std/Script.sol";
 import {NoirExample} from "../src/NoirExample.sol";
 
 contract NoirExampleScript is Script {
-    function run() public returns (NoirExample noirExample){
+    function run() public returns (NoirExample noirExample) {
         vm.broadcast();
         noirExample = new NoirExample();
     }

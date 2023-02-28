@@ -15,13 +15,10 @@ contract CounterTest is Test {
     }
 
     function testGenerateAndVerifyProof() public {
-        noirProver
-            .with_input(NoirProver.CircuitInput("x", 1))
-            .with_public_input(NoirProver.CircuitInput("y", 2))
+        noirProver.with_input(NoirProver.CircuitInput("x", 1)).with_public_input(NoirProver.CircuitInput("y", 2))
             .with_nargo_project_path("./circuits");
 
         bytes memory proof = noirProver.generate_proof();
         noirExample.verifyProof(proof);
     }
-
 }
